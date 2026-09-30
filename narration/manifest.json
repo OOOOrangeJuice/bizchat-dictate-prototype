@@ -1,0 +1,140 @@
+[
+  {
+    "id": "manual-language",
+    "clips": [
+      {
+        "kind": "intro",
+        "text": "Now demonstrating: Language Selection.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "user",
+        "text": "请帮我总结今天的关键决策，并给工程团队发一封跟进邮件。",
+        "lang": "zh-CN",
+        "voice": "zh-CN-XiaoxiaoNeural"
+      },
+      {
+        "kind": "benefits",
+        "text": "Here's why this matters: Lets people set a preferred dictation language for the session, prioritizing recognition in that language. Notice: Language manually set to Chinese.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      }
+    ]
+  },
+  {
+    "id": "mixed-language",
+    "clips": [
+      {
+        "kind": "intro",
+        "text": "Now demonstrating: Mixed-language Dictation.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "user",
+        "text": "请帮我总结今天meeting的key decisions，并且 draft一个follow-up email给engineering team.",
+        "lang": "zh-CN",
+        "voice": "zh-CN-XiaoxiaoNeural"
+      },
+      {
+        "kind": "benefits",
+        "text": "Here's why this matters: Automatically detects and transcribes multiple languages in one session, preserving the language originally spoken. Notice: Detected Chinese + English in one utterance. No manual language switch needed. Kept natural English terms: “meeting”, “key decisions”, “follow-up email”.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      }
+    ]
+  },
+  {
+    "id": "voice-correction",
+    "clips": [
+      {
+        "kind": "intro",
+        "text": "Now demonstrating: Voice-first Correction.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "user",
+        "text": "Move my 1:1 with Priya to Thursday at 3 PM — actually, make that 4 PM.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "benefits",
+        "text": "Here's why this matters: Say a correction mid-sentence — Dictate hears it, then updates the transcript to what you meant. Notice: Detected the self-correction and updated the transcript automatically — no retyping, no second request.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      }
+    ]
+  },
+  {
+    "id": "accent",
+    "clips": [
+      {
+        "kind": "intro",
+        "text": "Now demonstrating: Adaptive Recognition.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "user",
+        "text": "Can you help me sedule a call with the fentor team to discus the sale server migration and the Q free roadmap?",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "benefits",
+        "text": "Here's why this matters: Improves recognition over time based on pronunciation patterns — no manual accent selection needed. Notice: Adapted to your pronunciation — no accent picker needed.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      }
+    ]
+  },
+  {
+    "id": "personalized",
+    "clips": [
+      {
+        "kind": "intro",
+        "text": "Now demonstrating: Correction Learning.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "user",
+        "text": "Ping Shao Yu about the Nairobi data center outage post-mortem.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "benefits",
+        "text": "Here's why this matters: Learns from repeated explicit corrections to get your names, terminology, and acronyms right next time. Notice: “Xiaoyu” — corrected by you 3 times before, now recognized automatically. “Nairobi datacenter” — saved from a previous edit.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      }
+    ]
+  },
+  {
+    "id": "context-aware",
+    "clips": [
+      {
+        "kind": "intro",
+        "text": "Now demonstrating: Context-aware Dictation.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "user",
+        "text": "Send Arav Patel the notes from the Q3 O K R review and remind him about the Contoso S O W deadline.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      },
+      {
+        "kind": "benefits",
+        "text": "Here's why this matters: Uses Copilot context — active conversation, referenced files, known entities — without overriding strong speech signals. Notice: “Aarav Patel” — matched to your Outlook contacts. “Q3 OKR Review” — matched to your calendar. “SOW” recognized as workplace terminology.",
+        "lang": "en-US",
+        "voice": "en-US-AndrewNeural"
+      }
+    ]
+  }
+]

@@ -340,6 +340,11 @@
   .presenter-actions { display: flex; gap: 8px; }
   .presenter-btn { flex: 1; height: 32px; display: flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--cp-border); border-radius: 8px; background: var(--cp-surface); font-size: 12px; font-weight: 600; cursor: pointer; }
   .presenter-btn:hover { border-color: var(--cp-border-strong); color: var(--cp-text); }
+  /* Narration toggle: shows the speaker-off icon + "Voice Off" label while muted */
+  .presenter-btn .icon-voice-off { display: none; }
+  .presenter-btn.muted .icon-voice-on { display: none; }
+  .presenter-btn.muted .icon-voice-off { display: block; }
+  .presenter-btn.muted { color: var(--cp-text-muted); }
   .presenter-note { margin: 10px 0 0; font-size: 10px; color: var(--cp-text-muted); line-height: 1.4; }
 
   /* Language menu (fixed, positioned via JS to escape composer clipping) */
@@ -494,9 +499,14 @@
           <p class="presenter-tagline" id="scenarioTagline"></p>
           <div class="presenter-actions">
             <button class="presenter-btn" id="replayBtn"><i data-lucide="rotate-ccw" class="icon"></i>Replay</button>
+            <button class="presenter-btn" id="narrationToggleBtn" title="Toggle Play All background narration" aria-pressed="true">
+              <i data-lucide="volume-2" class="icon icon-voice-on"></i>
+              <i data-lucide="volume-x" class="icon icon-voice-off"></i>
+              <span id="narrationToggleLabel">Voice On</span>
+            </button>
           </div>
           <p class="autoplay-status" id="autoplayStatus"></p>
-          <p class="presenter-note">Prototype only — dictation is simulated, not real speech recognition.</p>
+          <p class="presenter-note">Prototype only — dictation is simulated, not real speech recognition. Play All narrates with pre-recorded audio (falls back to your browser's text-to-speech if a clip is missing).</p>
         </div>
       </div>
 
@@ -768,6 +778,8 @@
     const autoplayStatus = document.getElementById("autoplayStatus");
     const ghostCursor = document.getElementById("ghostCursor");
     const appEl = document.querySelector(".app");
+    const narrationToggleBtn = document.getElementById("narrationToggleBtn");
+    const narrationToggleLabel = document.getElementById("narrationToggleLabel");
 
     const renderIcons = () => window.lucide && window.lucide.createIcons();
 
@@ -782,6 +794,8 @@
     let autoplayPaused = false;
     let autoplayTimer = null;
     let autoplayResolve = null;
+    let narrationEnabled = true;
+    let currentNarrationAudio = null; // the <audio> element for the pre-rendered clip currently playing, if any
 
     const currentScenario = () => SCENARIOS.find(s => s.id === currentScenarioId);
     const rand = (min, max) => Math.floor(min + Math.random() * (max - min));
@@ -828,6 +842,7 @@
 
     function resetConversation() {
       if (dictateAbort) { dictateAbort.cancelled = true; dictateAbort.wake && dictateAbort.wake(); }
+      stopNarration();
       isListening = false;
       chat.querySelectorAll(".message").forEach(m => m.remove());
       welcome.style.display = "";
@@ -855,17 +870,6 @@
       langPillLabel.textContent = scenario.languages[currentLanguage].name;
     }
 
-    /* ---------- Microphone permission (best effort, never blocks the demo) ---------- */
-    function requestMicPermission() {
-      try {
-        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-          navigator.mediaDevices.getUserMedia({ audio: true })
-            .then(stream => stream.getTracks().forEach(track => track.stop()))
-            .catch(() => {});
-        }
-      } catch (err) { /* ignore — demo proceeds regardless of permission outcome */ }
-    }
-
     /* ---------- Dictate flow: live-transcribes while "listening", then self-corrects if the ---------- */
     /* ---------- scenario defines a raw `before` heard vs. the understood `transcript` ---------- */
     function startDictation() {
@@ -887,7 +891,6 @@
       showListeningCard(listeningConfig);
       micButton.classList.add("listening");
       micButton.setAttribute("aria-pressed", "true");
-      requestMicPermission();
 
       const abort = { cancelled: false, wake: null };
       dictateAbort = abort;
@@ -896,6 +899,7 @@
 
     function cancelDictation() {
       if (dictateAbort) { dictateAbort.cancelled = true; dictateAbort.wake && dictateAbort.wake(); }
+      stopNarration();
       isListening = false;
       micButton.classList.remove("listening");
       micButton.setAttribute("aria-pressed", "false");
@@ -963,7 +967,15 @@
         chips = scenario.chips; title = scenario.insightsTitle;
       }
 
+      // During Play All, narrate the simulated user voice in whatever language is on screen,
+      // in sync with the live-typed transcript below (not spoken during manual/presenter use).
+      const spokenNarration = autoplayRunning
+        ? narrate("user", scenario, liveText, spokenLangForScenario(scenario))
+        : Promise.resolve(false);
+
       await typeLive(liveText, abort);
+      if (abort.cancelled) { stopNarration(); return; }
+      await spokenNarration;
       if (abort.cancelled) return;
 
       if (scenario.before) {
@@ -1130,6 +1142,129 @@
     }
     function closeLangMenu() { langMenu.classList.remove("open"); }
 
+    /* ---------- Voice narration: background TTS that plays alongside Play All ----------
+       Three narration beats per scenario: (1) an English "now demonstrating" mode intro,
+       (2) a simulated user voice speaking the live-typed transcript in whatever language is
+       on screen, and (3) an English wrap-up of the feature's benefits, read from the chip
+       callouts. Uses the browser's built-in SpeechSynthesis API — no server, no audio files. */
+    const VOICE_LANG = { en: "en-US", zh: "zh-CN", es: "es-ES" };
+    // macOS (and some other OSes) list "novelty" character/sound-effect voices — e.g. Albert's
+    // monster-movie growl, Eddy/Flo/Grandma/Grandpa/Reed/Rocko/Sandy/Shelley's exaggerated personas —
+    // ahead of the normal narration-quality voices in getVoices(). A naive first-match pick grabs
+    // these by accident, which is why the narration can sound bizarre. Skip them explicitly.
+    const NOVELTY_VOICE_NAMES = new Set([
+      "Albert", "Bad News", "Bahh", "Bells", "Boing", "Bubbles", "Cellos", "Eddy", "Flo", "Fred",
+      "Good News", "Grandma", "Grandpa", "Jester", "Junior", "Kathy", "Organ", "Ralph", "Reed",
+      "Rocko", "Sandy", "Shelley", "Superstar", "Trinoids", "Whisper", "Wobble", "Zarvox"
+    ]);
+    // Known-good, natural-sounding voice names to prefer per language, checked in order.
+    const PREFERRED_VOICE_NAMES = {
+      "en-US": ["Samantha", "Ava", "Allison", "Susan", "Nicky", "Zoe"],
+      "zh-CN": ["Tingting", "Meijia", "Sinji"],
+      "es-ES": ["Mónica", "Monica", "Paulina"]
+    };
+    const isNovelty = (voice) => NOVELTY_VOICE_NAMES.has(voice.name.replace(/\s*\(.*\)$/, "").trim());
+    // Chrome (online, chrome.com build) exposes higher-quality server-rendered "Google ..." voices
+    // alongside the OS ones; macOS exposes higher-quality "Enhanced"/"Premium" voices once the user
+    // downloads them (System Settings > Accessibility > Spoken Content). Both sound far less robotic
+    // than the default compact voices, so prefer them automatically whenever present.
+    const isNetworkGoogleVoice = (voice) => !voice.localService && /^Google\s/.test(voice.name);
+    const isHighQualityLocalVoice = (voice) => /premium|enhanced|neural/i.test(voice.name) || /premium|enhanced|neural/i.test(voice.voiceURI || "");
+    let cachedVoices = [];
+    function refreshVoices() { cachedVoices = window.speechSynthesis ? window.speechSynthesis.getVoices() : []; }
+    if (window.speechSynthesis) {
+      refreshVoices();
+      window.speechSynthesis.onvoiceschanged = refreshVoices;
+    }
+    function pickVoice(lang) {
+      const base = lang.split("-")[0];
+      const candidates = cachedVoices.filter(v => v.lang === lang || v.lang.startsWith(base));
+      const usable = candidates.filter(v => !isNovelty(v));
+      // Quality ladder: online neural "Google" voice > downloaded Enhanced/Premium/Neural local
+      // voice > curated known-good default > whatever else is left.
+      const google = usable.find(isNetworkGoogleVoice);
+      if (google) return google;
+      const enhanced = usable.find(isHighQualityLocalVoice);
+      if (enhanced) return enhanced;
+      for (const name of PREFERRED_VOICE_NAMES[lang] || []) {
+        const match = usable.find(v => v.name === name);
+        if (match) return match;
+      }
+      return usable[0] || candidates[0] || null;
+    }
+    // Speaks `text` in `lang`; resolves `true` once playback ends, or `false` immediately if
+    // narration is muted/unsupported (so callers can fall back to a fixed pacing sleep).
+    function speak(text, lang) {
+      return new Promise(resolve => {
+        if (!narrationEnabled || !window.speechSynthesis || !text) { resolve(false); return; }
+        window.speechSynthesis.cancel();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.lang = lang;
+        utter.rate = lang === VOICE_LANG.en ? 1 : 0.95;
+        const voice = pickVoice(lang);
+        if (voice) utter.voice = voice;
+        utter.onend = () => resolve(true);
+        utter.onerror = () => resolve(true);
+        window.speechSynthesis.speak(utter);
+      });
+    }
+    function stopNarration() {
+      if (window.speechSynthesis) window.speechSynthesis.cancel();
+      if (currentNarrationAudio) { currentNarrationAudio.pause(); currentNarrationAudio.currentTime = 0; currentNarrationAudio = null; }
+    }
+    // Plays a pre-rendered narration clip (see narration/generate-narration.py); resolves `true` once
+    // it finishes, or `false` if it's missing/unplayable so the caller can fall back to live TTS.
+    function playNarrationClip(url) {
+      return new Promise(resolve => {
+        const audio = new Audio(url);
+        currentNarrationAudio = audio;
+        let settled = false;
+        const finish = (ok) => {
+          if (settled) return;
+          settled = true;
+          if (currentNarrationAudio === audio) currentNarrationAudio = null;
+          resolve(ok);
+        };
+        audio.addEventListener("ended", () => finish(true));
+        audio.addEventListener("error", () => finish(false));
+        audio.play().catch(() => finish(false));
+      });
+    }
+    // Narrates one beat of a scenario: tries the pre-rendered clip first (best quality, fully
+    // offline once cached), and falls back to live browser TTS if the clip is missing/blocked.
+    async function narrate(kind, scenario, fallbackText, fallbackLang) {
+      if (!narrationEnabled) return false;
+      const playedClip = await playNarrationClip(`narration/${scenario.id}/${kind}.mp3`);
+      if (playedClip) return true;
+      return speak(fallbackText, fallbackLang);
+    }
+    function setNarrationEnabled(enabled) {
+      narrationEnabled = enabled;
+      narrationToggleBtn.classList.toggle("muted", !enabled);
+      narrationToggleBtn.setAttribute("aria-pressed", String(enabled));
+      narrationToggleLabel.textContent = enabled ? "Voice On" : "Voice Off";
+      if (!enabled) stopNarration();
+    }
+    // Which language the simulated "user" is heard speaking for a given scenario.
+    function spokenLangForScenario(scenario) {
+      if (scenario.id === "manual-language") return VOICE_LANG[currentLanguage] || VOICE_LANG.en;
+      if (scenario.id === "mixed-language") return VOICE_LANG.zh;
+      return VOICE_LANG.en;
+    }
+    function scenarioChipCallouts(scenario) {
+      const source = scenario.id === "manual-language" ? scenario.languages[currentLanguage] : scenario;
+      return (source.chips || []).filter(c => c.type === "chip").map(c => c.text);
+    }
+    function modeIntroNarration(scenario) {
+      return `Now demonstrating: ${scenario.label}.`;
+    }
+    function benefitsNarration(scenario) {
+      const callouts = scenarioChipCallouts(scenario);
+      let text = `Here's why this matters: ${scenario.tagline}`;
+      if (callouts.length) text += ` Notice: ${callouts.join(". ")}.`;
+      return text;
+    }
+
     /* ---------- Autoplay: ghost cursor drives the same UI a presenter would click ---------- */
     function rawWait(ms) {
       return new Promise(resolve => {
@@ -1154,6 +1289,7 @@
     }
     function stopAutoplay() {
       autoplayCancelled = true;
+      stopNarration();
       window.clearTimeout(autoplayTimer);
       if (autoplayResolve) { const wake = autoplayResolve; autoplayResolve = null; wake(); }
     }
@@ -1226,6 +1362,7 @@
     function finishAutoplay() {
       autoplayRunning = false;
       autoplayPaused = false;
+      stopNarration();
       appEl.classList.remove("autoplay-active");
       scenarioSelect.disabled = false;
       replayBtn.disabled = false;
@@ -1254,7 +1391,9 @@
 
         await ghostSelectScenario(scenario.id);
         if (autoplayCancelled) break;
-        await sleep(900);
+        await narrate("intro", scenario, modeIntroNarration(scenario), VOICE_LANG.en); // announce which mode is starting
+        if (autoplayCancelled) break;
+        await sleep(500);
 
         if (scenario.id === "manual-language") {
           await ghostDemoLanguage("zh");
@@ -1266,7 +1405,11 @@
         if (autoplayCancelled) break;
         await waitForDictateSettled();
         if (autoplayCancelled) break;
-        await sleep(5000); // let the presenter read the insight highlights before sending
+        // Explain the feature's benefits in English while the insight highlights are on screen;
+        // fall back to a fixed reading pause if narration is muted/unsupported.
+        const explainedBenefits = await narrate("benefits", scenario, benefitsNarration(scenario), VOICE_LANG.en);
+        if (autoplayCancelled) break;
+        await sleep(explainedBenefits ? 900 : 5000);
 
         if (autoplayCancelled) break;
         await ghostClick(sendButton);
@@ -1337,7 +1480,14 @@
       if (!autoplayRunning) return;
       autoplayPaused = !autoplayPaused;
       setPauseButtonState(autoplayPaused);
+      if (window.speechSynthesis) {
+        if (autoplayPaused) window.speechSynthesis.pause(); else window.speechSynthesis.resume();
+      }
+      if (currentNarrationAudio) {
+        if (autoplayPaused) currentNarrationAudio.pause(); else currentNarrationAudio.play().catch(() => {});
+      }
     });
+    narrationToggleBtn.addEventListener("click", () => setNarrationEnabled(!narrationEnabled));
 
     /* ---------- Init ---------- */
     scenarioSelect.innerHTML = SCENARIOS.map(s => `<option value="${s.id}">${s.priority} · ${escapeHtml(s.label)}</option>`).join("");
